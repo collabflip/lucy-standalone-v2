@@ -1,43 +1,27 @@
-import cmd
-from pathlib import Path
-from lucy.ollama import chat
+"""Minimal CLI for Lucy."""
+from __future__ import annotations
 
-class Lucy(cmd.Cmd):
-    intro = """
-Lucy v2
-========
-Connected to local Lucy.
-Type help for commands.
-"""
-    prompt = "Lucy> "
+from lucy.dispatcher import Dispatcher
 
-    def do_status(self, arg):
-        print("Project :", Path.cwd())
-        print("Files   :", len(list(Path.cwd().rglob("*"))))
 
-    def do_ls(self, arg):
-        for p in sorted(Path.cwd().iterdir()):
-            print(p.name)
+def repl() -> None:
+    d = Dispatcher()
+    try:
+        while True:
+            prompt = "Lucy> "
+            line = input(prompt)
+            if line.strip() in ("exit", "quit"):
+                print("bye")
+                break
+            result = d.dispatch(line)
+            # deterministic JSON-like output for now
+            print(result.stdout, end="")
+            if result.stderr:
+                print(result.stderr, end="")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        print("exiting")
 
-    def do_pwd(self, arg):
-        print(Path.cwd())
 
-    def default(self, line):
-        try:
-            print()
-            print(chat(line))
-            print()
-        except Exception as e:
-            print("ERROR:", e)
-
-    def do_exit(self, arg):
-        return True
-
-    def do_quit(self, arg):
-        return True
-
-    def emptyline(self):
-        pass
-
-def main():
-    Lucy().cmdloop()
+if __name__ == "__main__":
+    repl()

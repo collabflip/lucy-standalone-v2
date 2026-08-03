@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "lucy-standalone-v2"
+version = "0.0.0"
+description = "Lucy Standalone v2 - local deterministic assistant"
+authors = ["collabflip"]
+
+[tool.poetry.dependencies]
+python = ">=3.14"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

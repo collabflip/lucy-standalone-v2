@@ -1,6 +1,10 @@
-#!/usr/bin/env python3
+"""Entrypoint to run Lucy from the project root."""
+from lucy.cli import repl
 
-from lucy.cli import main
+
+def main() -> None:
+    repl()
+
 
 if __name__ == "__main__":
     main()
