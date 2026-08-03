@@ -5,6 +5,7 @@ import shlex
 import importlib
 from pathlib import Path
 from typing import Optional, List, Dict
+from types import SimpleNamespace
 
 from lucy.registry import default_registry
 from lucy.contract import CommandResult
@@ -49,10 +50,68 @@ class Dispatcher:
         name = parts[0]
         args = parts[1:]
 
-        handler = default_registry.get(name)
-        if handler is not None:
-            # call handler with args and mutable context
-            result = handler(args, self.context)
+        # Prefer a single registry.lookup(name) API that returns an "entry"
+        # object with .handler and .deterministic attributes.
+        entry = None
+
+        if hasattr(default_registry, "lookup"):
+            try:
+                entry = default_registry.lookup(name)
+            except Exception:
+                # Registry lookup failed — return a deterministic internal error
+                # rather than crashing the whole process.
+                return CommandResult(
+                    stdout="",
+                    stderr="Dispatcher configuration error: registry.lookup(name) raised an exception.\n",
+                    exit_code=70,
+                    cwd=str(self.cwd),
+                )
+        else:
+            # Backwards-compatibility: build a minimal entry from older APIs.
+            handler = default_registry.get(name)
+            # Discover deterministic flag via preferred call or collection.
+            deterministic = False
+            if hasattr(default_registry, "is_deterministic"):
+                try:
+                    deterministic = bool(default_registry.is_deterministic(name))
+                except Exception:
+                    return CommandResult(
+                        stdout="",
+                        stderr="Dispatcher configuration error: registry.is_deterministic(name) raised an exception.\n",
+                        exit_code=70,
+                        cwd=str(self.cwd),
+                    )
+            elif hasattr(default_registry, "deterministic_commands"):
+                try:
+                    deterministic = name in getattr(default_registry, "deterministic_commands")
+                except Exception:
+                    return CommandResult(
+                        stdout="",
+                        stderr="Dispatcher configuration error: registry.deterministic_commands is malformed.\n",
+                        exit_code=70,
+                        cwd=str(self.cwd),
+                    )
+            else:
+                # Registry does not expose deterministic metadata — return an
+                # internal error so Lucy stays alive and the problem is visible.
+                return CommandResult(
+                    stdout="",
+                    stderr="Dispatcher configuration error: registry does not expose deterministic command metadata.\n",
+                    exit_code=70,
+                    cwd=str(self.cwd),
+                )
+
+            entry = SimpleNamespace(handler=handler, deterministic=deterministic)
+
+        # If registry provided nothing for this name, fall back to subprocess
+        # for legacy/non-registered commands.
+        if entry is None:
+            return run_subprocess(parts, cwd=self.cwd)
+
+        # If a handler exists, run it.
+        if getattr(entry, "handler", None) is not None:
+            result = entry.handler(args, self.context)
+
             # allow handlers to modify cwd in context
             cwd = self.context.get("cwd")
             if isinstance(cwd, Path):
@@ -61,6 +120,15 @@ class Dispatcher:
                 self.cwd = Path(cwd)
             return result
 
-        # deterministic builtins not found: fallback to subprocess
-        # Use run_subprocess in the dispatcher's cwd
+        # No handler. If the registry marks this command deterministic, we must
+        # not fall back to subprocess — return command-not-found.
+        if getattr(entry, "deterministic", False):
+            return CommandResult(
+                stdout="",
+                stderr=f"{name}: command not found\n",
+                exit_code=127,
+                cwd=str(self.cwd),
+            )
+
+        # Non-deterministic / not-protected commands may be run via subprocess.
         return run_subprocess(parts, cwd=self.cwd)
