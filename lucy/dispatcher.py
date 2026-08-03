@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import shlex
+import importlib
 from pathlib import Path
 from typing import Optional, List, Dict
 
@@ -23,6 +24,19 @@ class Dispatcher:
             self.cwd = self.cwd.resolve()
         except Exception:
             self.cwd = Path.cwd()
+
+        # Ensure deterministic command handlers are imported and registered
+        # Import filesystem and git handlers so they self-register with the registry
+        try:
+            importlib.import_module("lucy.filesystem")
+        except Exception:
+            # best-effort: handlers may be missing in some environments
+            pass
+        try:
+            importlib.import_module("lucy.gittools")
+        except Exception:
+            pass
+
         # simple environment/context passed to handlers
         self.context: Dict = {"cwd": self.cwd, "repo_root": self.repo_root}
 
